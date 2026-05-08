@@ -69,9 +69,8 @@ h1,h2,h3,h4,h5,h6,p,label {
 @st.cache_data
 def load_data():
 
-    df = pd.read_csv(
-        r"C:\Users\alens\OneDrive\Documents\Desktop\REal Estate\india_housing_prices.csv"
-    )
+    df = pd.read_csv("india_housing_prices.csv")
+    
 
     return df
 
