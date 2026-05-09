@@ -70,7 +70,6 @@ h1,h2,h3,h4,h5,h6,p,label {
 def load_data():
 
     df = pd.read_csv("india_housing_prices.csv")
-    
 
     return df
 
@@ -87,7 +86,7 @@ df.columns = (
 # ---------------- REMOVE DUPLICATES ----------------
 df.drop_duplicates(inplace=True)
 
-# ---------------- FILL MISSING VALUES ----------------
+# ---------------- HANDLE MISSING VALUES ----------------
 df.fillna(0, inplace=True)
 
 # ---------------- NUMERIC CONVERSION ----------------
@@ -115,34 +114,42 @@ df['price_per_sqft'] = (
 df['age_of_property'] = 2026 - df['year_built']
 
 # ---------------- TRANSPORT SCORE ----------------
-transport_map = {
-    "poor": 2,
-    "medium": 5,
-    "high": 8
-}
-
 df['public_transport_accessibility'] = (
     df['public_transport_accessibility']
     .astype(str)
+    .str.strip()
     .str.lower()
 )
+
+transport_map = {
+    'poor': 2,
+    'medium': 5,
+    'high': 8
+}
 
 df['transport_score'] = (
     df['public_transport_accessibility']
     .map(transport_map)
-    .fillna(5)
 )
+
+df['transport_score'].fillna(5, inplace=True)
 
 # ---------------- GOOD INVESTMENT ----------------
 df['good_investment'] = np.where(
     (
-        df['price_per_sqft']
-        < df['price_per_sqft'].median()
+        df['nearby_schools'] >= 4
     )
     &
     (
-        df['nearby_schools']
-        > df['nearby_schools'].median()
+        df['nearby_hospitals'] >= 3
+    )
+    &
+    (
+        df['transport_score'] >= 5
+    )
+    &
+    (
+        df['age_of_property'] <= 10
     ),
     1,
     0
@@ -169,14 +176,14 @@ y_reg = df['price_in_lakhs']
 def train_models(X, y_class, y_reg):
 
     clf = RandomForestClassifier(
-        n_estimators=20,
-        max_depth=5,
+        n_estimators=50,
+        max_depth=6,
         random_state=42
     )
 
     reg = RandomForestRegressor(
-        n_estimators=20,
-        max_depth=5,
+        n_estimators=50,
+        max_depth=6,
         random_state=42
     )
 
@@ -234,14 +241,14 @@ schools = st.sidebar.slider(
     "Nearby Schools",
     0,
     10,
-    3
+    5
 )
 
 hospitals = st.sidebar.slider(
     "Nearby Hospitals",
     0,
     10,
-    2
+    4
 )
 
 transport = st.sidebar.selectbox(
@@ -286,7 +293,7 @@ if st.sidebar.button("Analyze Property"):
         'age_of_property': [age]
     })
 
-    # ---------------- PREDICTION ----------------
+    # ---------------- PREDICTIONS ----------------
     invest_pred = clf.predict(input_data)[0]
 
     predicted_price = reg.predict(input_data)[0]
@@ -295,7 +302,7 @@ if st.sidebar.button("Analyze Property"):
 
     profit = future_price - current_price
 
-    # ---------------- RESULT LAYOUT ----------------
+    # ---------------- RESULT SECTION ----------------
     col1, col2 = st.columns(2)
 
     with col1:
@@ -329,11 +336,15 @@ if st.sidebar.button("Analyze Property"):
         st.markdown(
             f"""
             <div class="metric-card">
+
             <h2>📈 Estimated Price After 5 Years</h2>
+
             <h1>₹ {future_price:.2f} Lakhs</h1>
 
             <h3>💰 Estimated Profit</h3>
+
             <h2>₹ {profit:.2f} Lakhs</h2>
+
             </div>
             """,
             unsafe_allow_html=True
@@ -341,52 +352,100 @@ if st.sidebar.button("Analyze Property"):
 
     st.divider()
 
-    # ---------------- FEATURE IMPORTANCE ----------------
-    st.subheader("Feature Importance")
+    # ---------------- FILTERED DATA ----------------
+    filtered_df = df[
+        (df['city'] == city)
+    ]
+
+    # ---------------- DYNAMIC FEATURE ANALYSIS ----------------
+    st.subheader("Feature Importance Analysis")
 
     importance_df = pd.DataFrame({
-        'Feature': features,
-        'Importance': clf.feature_importances_
+
+        'Feature': [
+            'BHK',
+            'Size',
+            'Schools',
+            'Hospitals',
+            'Transport',
+            'Age'
+        ],
+
+        'Importance': [
+
+            bhk,
+
+            size / 500,
+
+            schools * 10,
+
+            hospitals * 10,
+
+            transport_score * 10,
+
+            30 - age
+        ]
     })
 
-    importance_df = (
-        importance_df
-        .sort_values(
-            by='Importance',
-            ascending=False
-        )
-    )
-
     fig = px.bar(
+
         importance_df,
+
         x='Feature',
+
         y='Importance',
-        title='Feature Importance'
+
+        color='Importance',
+
+        title='Current Property Feature Analysis'
+
     )
 
     st.plotly_chart(
+
         fig,
+
         use_container_width=True
+
     )
 
-    # ---------------- CITY PRICE CHART ----------------
-    st.subheader("Average Property Price by City")
+    # ---------------- CITY PRICE TREND ----------------
+    st.subheader("Price Trend in Selected City")
 
     city_price = (
-        df.groupby('city')['price_in_lakhs']
+        filtered_df.groupby('property_type')['price_in_lakhs']
         .mean()
         .reset_index()
     )
 
     fig2 = px.bar(
         city_price,
-        x='city',
+        x='property_type',
         y='price_in_lakhs',
-        title='Average Property Price by City'
+        color='property_type',
+        title=f'Average Property Prices in {city}'
     )
 
     st.plotly_chart(
         fig2,
+        use_container_width=True
+    )
+
+    # ---------------- SIZE VS PRICE ----------------
+    st.subheader("Size vs Price Analysis")
+
+    fig3 = px.scatter(
+        filtered_df,
+        x='size_in_sqft',
+        y='price_in_lakhs',
+        color='property_type',
+        size='bhk',
+        hover_data=['city'],
+        title='Property Size vs Price'
+    )
+
+    st.plotly_chart(
+        fig3,
         use_container_width=True
     )
 
